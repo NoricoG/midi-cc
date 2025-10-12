@@ -6,6 +6,6 @@
             "dom"
         ],
         "module": "system",
-        "outFile": "compiled/script.js"
+        "outFile": "target/script.js"
     }
 }
