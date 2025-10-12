@@ -1,18 +1,27 @@
-const devices = {
-    "NTS-1":
+const devices = [
+    //desktop
     {
+        "name": "NTS-1",
         "in": "NTS-1 digital kit KBD/KNOB",
         "out": "NTS-1 digital kit SOUND"
     },
-    "NTS-1 MK2": {
+    //android
+    {
+        "name": "NTS-1",
+        "in": "NTS-1 digital kit",
+        "out": "NTS-1 digital kit"
+    },
+    {
+        "name": "NTS-1 MK2",
         "in": "TODO",
         "out": "TODO"
     },
-    "MicroFreak": {
+    {
+        "name": "MicroFreak",
         "in": "Arturia MicroFreak",
         "out": "Arturia MicroFreak"
     }
-};
+];
 
 const synthCategoryCc = {
     "NTS-1": {

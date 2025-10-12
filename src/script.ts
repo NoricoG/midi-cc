@@ -6,13 +6,14 @@ const MIDI_CC_MAX = 127;
 // state
 let selectedDevice: string | null = null;
 let sliderElements: Record<string, Record<string, HTMLInputElement>> = {};
-let output: any;
-let outputChannel: any;
+let input: any = null;
+let output: any = null;
+let outputChannel: any = null;
 
 WebMidi
     .enable()
     .then(onEnabled)
-    .catch((err: any) => alert(err));
+    .catch((err: Error) => alert(err.stack ? err.stack : err.message));
 
 function onEnabled() {
     selectDevices();
@@ -20,39 +21,41 @@ function onEnabled() {
 }
 
 function selectDevices() {
-    for (const device in devices) {
-        const hasInput = WebMidi.getInputByName(devices[device]["in"]) !== undefined;
-        const hasOutput = WebMidi.getOutputByName(devices[device]["out"]) !== undefined;
+    devices.forEach((device) => {
+        const hasInput = WebMidi.getInputByName(device["in"]) !== undefined;
+        const hasOutput = WebMidi.getOutputByName(device["out"]) !== undefined;
         if (hasInput && hasOutput) {
-            selectedDevice = device;
+            selectedDevice = device["name"];
             document.getElementById("title")!.innerText = selectedDevice;
+
+            input = WebMidi.getInputByName(device["in"]);
+            input.addListener("controlchange", (e: any) => {
+                receiveCc(e.dataBytes[0], e.dataBytes[1]);
+            });
+
+            output = WebMidi.getOutputByName(device["out"]);
+            outputChannel = output.channels[1];
         }
-    }
+    });
 
     if (selectedDevice === null) {
         let alertString = "No known device found. Please connect one of the following supported devices (input, output):\n";
-        for (const device in devices) {
-            alertString += `- ${device} (${devices[device]["in"]}, ${devices[device]["out"]})\n`;
-        }
+        devices.forEach((device) => {
+            alertString += `- ${device["name"]} (${device["in"]}, ${device["out"]})\n`;
+        });
         alertString += "Connected input devices:\n";
-        WebMidi.inputs.forEach((device: any, index: number) => {
+        WebMidi.inputs.forEach((device: any, _) => {
             alertString += `- ${device.name}\n`;
         });
         alertString += "Connected output devices:\n";
-        WebMidi.outputs.forEach((device: any, index: number) => {
+        WebMidi.outputs.forEach((device: any, _) => {
             alertString += `- ${device.name}\n`;
         });
         alert(alertString);
         return;
     }
 
-    const input = WebMidi.getInputByName(devices[selectedDevice]["in"]);
-    input.addListener("controlchange", (e: any) => {
-        receiveCc(e.dataBytes[0], e.dataBytes[1]);
-    })
 
-    output = WebMidi.getOutputByName(devices[selectedDevice]["out"]);
-    outputChannel = output.channels[1];
 }
 
 function createUi() {

@@ -1,17 +1,27 @@
-const devices = {
-    "NTS-1": {
+const devices = [
+    //desktop
+    {
+        "name": "NTS-1",
         "in": "NTS-1 digital kit KBD/KNOB",
         "out": "NTS-1 digital kit SOUND"
     },
-    "NTS-1 MK2": {
+    //android
+    {
+        "name": "NTS-1",
+        "in": "NTS-1 digital kit",
+        "out": "NTS-1 digital kit"
+    },
+    {
+        "name": "NTS-1 MK2",
         "in": "TODO",
         "out": "TODO"
     },
-    "MicroFreak": {
+    {
+        "name": "MicroFreak",
         "in": "Arturia MicroFreak",
         "out": "Arturia MicroFreak"
     }
-};
+];
 const synthCategoryCc = {
     "NTS-1": {
         "Oscillator": {
@@ -134,47 +144,48 @@ const MIDI_CC_MAX = 127;
 // state
 let selectedDevice = null;
 let sliderElements = {};
-let output;
-let outputChannel;
+let input = null;
+let output = null;
+let outputChannel = null;
 WebMidi
     .enable()
     .then(onEnabled)
-    .catch((err) => alert(err));
+    .catch((err) => alert(err.stack ? err.stack : err.message));
 function onEnabled() {
     selectDevices();
     createUi();
 }
 function selectDevices() {
-    for (const device in devices) {
-        const hasInput = WebMidi.getInputByName(devices[device]["in"]) !== undefined;
-        const hasOutput = WebMidi.getOutputByName(devices[device]["out"]) !== undefined;
+    devices.forEach((device) => {
+        const hasInput = WebMidi.getInputByName(device["in"]) !== undefined;
+        const hasOutput = WebMidi.getOutputByName(device["out"]) !== undefined;
         if (hasInput && hasOutput) {
-            selectedDevice = device;
+            selectedDevice = device["name"];
             document.getElementById("title").innerText = selectedDevice;
+            input = WebMidi.getInputByName(device["in"]);
+            input.addListener("controlchange", (e) => {
+                receiveCc(e.dataBytes[0], e.dataBytes[1]);
+            });
+            output = WebMidi.getOutputByName(device["out"]);
+            outputChannel = output.channels[1];
         }
-    }
+    });
     if (selectedDevice === null) {
         let alertString = "No known device found. Please connect one of the following supported devices (input, output):\n";
-        for (const device in devices) {
-            alertString += `- ${device} (${devices[device]["in"]}, ${devices[device]["out"]})\n`;
-        }
+        devices.forEach((device) => {
+            alertString += `- ${device["name"]} (${device["in"]}, ${device["out"]})\n`;
+        });
         alertString += "Connected input devices:\n";
-        WebMidi.inputs.forEach((device, index) => {
+        WebMidi.inputs.forEach((device, _) => {
             alertString += `- ${device.name}\n`;
         });
         alertString += "Connected output devices:\n";
-        WebMidi.outputs.forEach((device, index) => {
+        WebMidi.outputs.forEach((device, _) => {
             alertString += `- ${device.name}\n`;
         });
         alert(alertString);
         return;
     }
-    const input = WebMidi.getInputByName(devices[selectedDevice]["in"]);
-    input.addListener("controlchange", (e) => {
-        receiveCc(e.dataBytes[0], e.dataBytes[1]);
-    });
-    output = WebMidi.getOutputByName(devices[selectedDevice]["out"]);
-    outputChannel = output.channels[1];
 }
 function createUi() {
     const categoriesElement = document.getElementById("categories");
