@@ -1,0 +1,51 @@
+// TODO: let playNoteSample depend on what is randomised or reset
+// TODO: display labels, received from NTS-1 https://github.com/oscarrc/nts-web/blob/2714ab90df255c74eee85c063138c901f4b525bf/src/hooks/useNTS.jsx
+// TODO: divide cc into reset groups. Add reset per level. Could make the whole tree dynamic. Or allow certain sliders to be pinned.
+// TODO: select microfreak preset using bank and program change
+// TODO: support multiple devices at the same time
+// TODO: link to other tools at the bottom
+
+// TODO: use microfreak as midi controller for NTS-1, including CC forward. Maybe generic mapper
+
+// arp
+// TODO: move to wirbel
+// TODO: integrate strudel including piano roll
+// TODO: sliders (length, scale, pattern, speed, octave range, swing, gate time, arp of arp, ...)
+// TODO: proper panic including all future notes (not needed with strudel?)
+
+// microfreak specific
+// TODO: microfreak speech oscillator cc (appendix A)
+// Read preset, continue https://github.com/francoisgeorgy/microfreak-reader/tree/master or one of the forks
+
+// unrelated
+// TODO: port geometrico to web
+
+
+
+
+
+
+
+// debug
+const repeatArray = (arr, n) => Array(n).fill(arr).flat();
+const arpeggioButton = document.createElement("button");
+arpeggioButton.innerText = "Arpeggio Test";
+arpeggioButton.onclick = () => {
+    const repeats = 2;
+    const noteLength = 200;
+    const breakLength = 50;
+    var notes = []
+    notes = notes.concat(repeatArray(["C4", "E4", "G4", "E4"], 2));
+    notes = notes.concat(repeatArray(["E4", "G4", "B4", "G4"], 2));
+    notes = notes.concat(repeatArray(["G4", "B4", "D5", "B4"], 2));
+    notes = notes.concat(repeatArray(["E4", "G4", "B4", "G4"], 2));
+    console.log(notes)
+    const durationPerRepeat = notes.length * (noteLength + breakLength);
+    for (let repeat = 0; repeat < repeats; repeat++) {
+        for (let noteIndex = 0; noteIndex < notes.length; noteIndex++) {
+            const time = repeat * durationPerRepeat + noteIndex * (noteLength + breakLength)
+            channel.playNote(notes[noteIndex], { duration: noteLength, time: `+${time}` });
+        }
+    }
+};
+categoriesElement.appendChild(arpeggioButton);
