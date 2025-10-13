@@ -9,6 +9,7 @@ let sliderElements: Record<string, Record<string, HTMLInputElement>> = {};
 let input: any = null;
 let output: any = null;
 let outputChannel: any = null;
+let rangeTranslator: any = null;
 
 WebMidi
     .enable({ sysex: true })
@@ -37,9 +38,14 @@ function selectDevices() {
             outputChannel = output.channels[1];
 
             if (selectedDevice === "NTS-1") {
-                (async () => {
-                    await getNts1PluginNames(input, output);
-                })();
+                console.log("[selectDevices] Creating Nts1RangeTranslator");
+                rangeTranslator = new Nts1RangeTranslator();
+                const getRangeLabelsPromise = rangeTranslator.getRangeLabels();
+                getRangeLabelsPromise.then(() => {
+                    console.log("[selectDevices] getRangeLabels finished", rangeTranslator.controls);
+                });
+            } else {
+                rangeTranslator = new RangeTranslator();
             }
             // only select 1 device (for now)
             break;
@@ -97,16 +103,17 @@ function createUi() {
 
             const initialValue = getDefaultValue(category, ccLabel)
             const ccSlider = createSlider(ccElement, MIDI_CC_MIN, MIDI_CC_MAX, initialValue, (value) => {
-                sendCc(cc, parseInt(value));
-                updateUiCcValueLabel(category, ccLabel, value);
+                const parsedValue = parseInt(value);
+                sendCc(cc, parsedValue);
+                updateUiCcValueLabel(cc, category, ccLabel, parsedValue);
             });
 
             sliderElements[category][ccLabel] = ccSlider;
 
+            createElement(ccElement, "span", undefined, ccLabel);
+
             const ccValue = createElement(ccElement, "span", undefined, "0");
             ccValue.style.width = "4ch";
-
-            createElement(ccElement, "span", undefined, ccLabel);
         }
     }
 
@@ -154,7 +161,7 @@ function randomiseCategory(category: string) {
         const cc = ccList[ccLabel];
         const value = Math.floor(Math.random() * (MIDI_CC_MAX + 1));
         sendCc(cc, value);
-        updateUiCc(category, ccLabel, value);
+        updateUiCc(cc, category, ccLabel, value);
     }
     playNoteSample();
 }
@@ -173,7 +180,7 @@ function resetCategory(category: string) {
         const cc = ccList[ccLabel];
         const value = getDefaultValue(category, ccLabel)
         sendCc(cc, value);
-        updateUiCc(category, ccLabel, value);
+        updateUiCc(cc, category, ccLabel, value);
     }
     playNoteSample();
 }
@@ -199,21 +206,22 @@ function receiveCc(command: number, value: number) {
         const [category, label] = Object.entries(synthCategoryCc[selectedDevice!]).flatMap(([category, ccs]) =>
             Object.entries(ccs).filter(([ccLabel, cc]) => cc === command).map(([ccLabel, cc]) => [category, ccLabel])
         )[0];
-        updateUiCc(category, label, value);
+        updateUiCc(command, category, label, value);
     } catch (error) {
         console.log("Received CC not in config:", command);
         return;
     }
 }
 
-function updateUiCc(category: string, label: string, value: number) {
+function updateUiCc(command: number, category: string, label: string, value: number) {
     sliderElements[category][label].value = value.toString();
-    updateUiCcValueLabel(category, label, value.toString());
+    updateUiCcValueLabel(command, category, label, value);
 }
 
-function updateUiCcValueLabel(category: string, label: string, value: string) {
-    const ccLabelElement = sliderElements[category][label].nextSibling as HTMLSpanElement;
-    ccLabelElement.innerText = value;
+function updateUiCcValueLabel(command: number, category: string, label: string, value: number) {
+    const ccLabelElement = sliderElements[category][label].nextSibling.nextSibling as HTMLSpanElement;
+    ccLabelElement.innerText = rangeTranslator.translate(command, value);
+    console.log(rangeTranslator.translate(command, value));
 }
 
 function playNoteSample(octaves = true, hold = true) {
@@ -230,78 +238,42 @@ function playNoteSample(octaves = true, hold = true) {
     }
 }
 
-// NTS-1 specific
-// based on https://github.com/oscarrc/nts-web/blob/master/src/hooks/useNTS.jsx
-const sysex = {
-    vendor: 66,
-    channel: 0,
-    device: 87,
-};
-
-const defaultControls = {};
-
-const decode = (data: number[]): string => {
-    let nameBytes = data.slice(30, data.length - 1);
-    let decodedString = "";
-    nameBytes.forEach(byte => {
-        if (byte) {
-            decodedString = decodedString + String.fromCharCode(byte);
-        }
-    });
-    return decodedString.replace(/[^a-zA-Z0-9 -]/g, "");
+class RangeTranslator {
+    translate(cc: number, value: number): string {
+        return value.toString();
+    }
 }
 
-const getNts1PluginNames = async (input: any, output: any): Promise<any> => {
-    let type = 1;
-    let bank = 0;
-    let controls: any = JSON.parse(JSON.stringify(defaultControls));
-    const index = [88, 89, 90, 53];
+class Nts1RangeTranslator extends RangeTranslator {
+    controls = {};
 
-    if (!input || !output) {
-        console.error("MIDI devices not available.");
-        return defaultControls;
+    async getRangeLabels(): Promise<void> {
+        const nts1Fetcher = new Nts1PluginFetcher();
+        this.controls = await nts1Fetcher.fetchPluginNames(input, output);
     }
 
-    const get = (e: any) => {
-        if (e.data.length === 53) {
-            const decoded = decode(e.data);
-            const controlIndex = index[type - 1];
-            if (!controls[controlIndex]) {
-                controls[controlIndex] = { options: [] };
-            }
-            if (!controls[controlIndex].options.includes(decoded)) {
-                controls[controlIndex].options.push(decoded);
-            }
-        }
+    translate(cc: number, value: number): string {
+        if (this.controls[cc]) {
+            const labels = this.controls[cc];
 
-        // request next plugin name, at the next bank within the same type or in the next type
-        if (bank < 16) {
-            bank++;
-            output.sendSysex(sysex.vendor, [48 + sysex.channel, 0, 1, sysex.device, 25, type, bank]);
-        } else if (type < 4) {
-            bank = 0;
-            type++;
-            output.sendSysex(sysex.vendor, [48 + sysex.channel, 0, 1, sysex.device, 25, type, bank]);
+            // last label gets max value
+            if (value == 127) {
+                return labels[labels.length - 1];
+            }
+
+            // TODO: adapt logic to full range of values, coming from slider
+            // Or let slider not use the full range but only specific values
+
+            // other labels get an even offset
+            const offsetPerLabel = Math.floor(128 / labels.length);
+            if (value % offsetPerLabel !== 0) {
+                console.error(`value ${value} does not match ${labels.length} labels (${labels}) evenly, expecting a multiple of ${offsetPerLabel}`);
+            }
+            const index = Math.floor(value / offsetPerLabel);
+
+            return labels[index];
         } else {
-            input.removeListener("sysex", get);
-            console.log("Labels fetched:", controls);
+            return value.toString();
         }
-    };
-
-    // make sure we can receive the sysex messages that contain the plugin names
-    input.addListener("sysex", get);
-
-    // get the NTS-1 to send us sysex messages
-    // either sysex messages seems to do the trick, it's not needed to send both
-    output.sendSysex(sysex.vendor, [80, 0, 2]);
-    output.sendSysex(sysex.vendor, [48 + sysex.channel, 0, 1, sysex.device, 25, type, bank]);
-
-    return new Promise(resolve => {
-        const checkDone = setInterval(() => {
-            if (type > 4) {
-                clearInterval(checkDone);
-                resolve(controls);
-            }
-        }, 1000);
-    });
-};
+    }
+}
