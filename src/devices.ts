@@ -1,15 +1,14 @@
 const devices = [
-    //desktop
-    {
-        "name": "NTS-1",
-        "in": "NTS-1 digital kit KBD/KNOB",
-        "out": "NTS-1 digital kit SOUND"
-    },
-    //android
     {
         "name": "NTS-1",
         "in": "NTS-1 digital kit",
         "out": "NTS-1 digital kit"
+    },
+    // other input output names I have observed
+    {
+        "name": "NTS-1",
+        "in": "NTS-1 digital kit KBD/KNOB",
+        "out": "NTS-1 digital kit SOUND"
     },
     {
         "name": "NTS-1 MK2",

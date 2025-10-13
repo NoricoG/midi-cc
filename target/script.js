@@ -1,15 +1,14 @@
 const devices = [
-    //desktop
-    {
-        "name": "NTS-1",
-        "in": "NTS-1 digital kit KBD/KNOB",
-        "out": "NTS-1 digital kit SOUND"
-    },
-    //android
     {
         "name": "NTS-1",
         "in": "NTS-1 digital kit",
         "out": "NTS-1 digital kit"
+    },
+    // other input output names I have observed
+    {
+        "name": "NTS-1",
+        "in": "NTS-1 digital kit KBD/KNOB",
+        "out": "NTS-1 digital kit SOUND"
     },
     {
         "name": "NTS-1 MK2",
@@ -148,7 +147,7 @@ let input = null;
 let output = null;
 let outputChannel = null;
 WebMidi
-    .enable()
+    .enable({ sysex: true })
     .then(onEnabled)
     .catch((err) => alert(err.stack ? err.stack : err.message));
 function onEnabled() {
@@ -156,7 +155,7 @@ function onEnabled() {
     createUi();
 }
 function selectDevices() {
-    devices.forEach((device) => {
+    for (let device of devices) {
         const hasInput = WebMidi.getInputByName(device["in"]) !== undefined;
         const hasOutput = WebMidi.getOutputByName(device["out"]) !== undefined;
         if (hasInput && hasOutput) {
@@ -168,8 +167,15 @@ function selectDevices() {
             });
             output = WebMidi.getOutputByName(device["out"]);
             outputChannel = output.channels[1];
+            if (selectedDevice === "NTS-1") {
+                (async () => {
+                    await getNts1PluginNames(input, output);
+                })();
+            }
+            // only select 1 device (for now)
+            break;
         }
-    });
+    }
     if (selectedDevice === null) {
         let alertString = "No known device found. Please connect one of the following supported devices (input, output):\n";
         devices.forEach((device) => {
@@ -218,7 +224,7 @@ function createUi() {
             createElement(ccElement, "span", undefined, ccLabel);
         }
     }
-    playNoteSample();
+    playNoteSample(false, true);
 }
 function createElement(parentElement, tag, className, textContent) {
     const element = document.createElement(tag);
@@ -326,3 +332,71 @@ function playNoteSample(octaves = true, hold = true) {
         outputChannel.playNote("C4", { duration: longDuration, time: `+${nOctaves * shortDuration}` });
     }
 }
+// NTS-1 specific
+// based on https://github.com/oscarrc/nts-web/blob/master/src/hooks/useNTS.jsx
+const sysex = {
+    vendor: 66,
+    channel: 0,
+    device: 87,
+};
+const defaultControls = {};
+const decode = (data) => {
+    let nameBytes = data.slice(30, data.length - 1);
+    let decodedString = "";
+    nameBytes.forEach(byte => {
+        if (byte) {
+            decodedString = decodedString + String.fromCharCode(byte);
+        }
+    });
+    return decodedString.replace(/[^a-zA-Z0-9 -]/g, "");
+};
+const getNts1PluginNames = async (input, output) => {
+    let type = 1;
+    let bank = 0;
+    let controls = JSON.parse(JSON.stringify(defaultControls));
+    const index = [88, 89, 90, 53];
+    if (!input || !output) {
+        console.error("MIDI devices not available.");
+        return defaultControls;
+    }
+    const get = (e) => {
+        if (e.data.length === 53) {
+            const decoded = decode(e.data);
+            const controlIndex = index[type - 1];
+            if (!controls[controlIndex]) {
+                controls[controlIndex] = { options: [] };
+            }
+            if (!controls[controlIndex].options.includes(decoded)) {
+                controls[controlIndex].options.push(decoded);
+            }
+        }
+        // request next plugin name, at the next bank within the same type or in the next type
+        if (bank < 16) {
+            bank++;
+            output.sendSysex(sysex.vendor, [48 + sysex.channel, 0, 1, sysex.device, 25, type, bank]);
+        }
+        else if (type < 4) {
+            bank = 0;
+            type++;
+            output.sendSysex(sysex.vendor, [48 + sysex.channel, 0, 1, sysex.device, 25, type, bank]);
+        }
+        else {
+            input.removeListener("sysex", get);
+            console.log("Labels fetched:", controls);
+        }
+    };
+    // make sure we can receive the sysex messages that contain the plugin names
+    input.addListener("sysex", get);
+    // get the NTS-1 to send us sysex messages
+    // either sysex messages seems to do the trick, it's not needed to send both
+    output.sendSysex(sysex.vendor, [80, 0, 2]);
+    output.sendSysex(sysex.vendor, [48 + sysex.channel, 0, 1, sysex.device, 25, type, bank]);
+    return new Promise(resolve => {
+        const checkDone = setInterval(() => {
+            if (type > 4) {
+                clearInterval(checkDone);
+                resolve(controls);
+            }
+        }, 1000);
+    });
+};
