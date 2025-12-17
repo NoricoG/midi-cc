@@ -13,8 +13,14 @@
 <body>
     <h1 id="title"></h1>
     <div id="categories"></div>
-    <h2>MIDI debug info</h2>
-    <div id="midi-debug"></div>
+    <h2>MIDI settings</h2>
+    <div id="midi-in-out"></div>
+    <p>In:</p>
+    <select id="midi-in"></select>
+    <p>Out:</p>
+    <select id="midi-out"></select>
+    <br>
+    <button onClick="changeMidiInOut()">Change MIDI In/Out</button>
 </body>
 
 </html>
