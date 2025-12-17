@@ -1,9 +1,12 @@
-const nts1DefaultPluginNames = {
+// TODO: fully update this list
+const nts1Mk2DefaultPluginNames = {
     53: [
+        "Off",
         "Sawtooth",
         "Triangle",
         "Square",
-        "VPN"
+        "VPN",
+        "Noise"
     ],
     42: [
         "LowPass 2p",
@@ -12,7 +15,7 @@ const nts1DefaultPluginNames = {
         "BandPass 4p",
         "HighPass 2p",
         "HighPass 4p",
-        "Off"
+        "Through"
     ],
     14: [
         "ADSR",
@@ -66,12 +69,13 @@ const nts1DefaultPluginNames = {
     ]
 }
 
+// TODO: adopt this to work with NTS-1 MK2 using midi implementation docs
 // based on https://github.com/oscarrc/nts-web/blob/master/src/hooks/useNTS.jsx
-class Nts1PluginFetcher {
+class Nts1Mk2PluginFetcher {
     private sysex = {
         vendor: 66,
         channel: 0,
-        device: 87,
+        device: 80,
     };
     private defaultControls: any = {};
     private index = [88, 89, 90, 53];
@@ -91,7 +95,7 @@ class Nts1PluginFetcher {
         return new Promise(resolve => {
             let type = 1;
             let bank = 0;
-            let controls: any = JSON.parse(JSON.stringify(nts1DefaultPluginNames));
+            let controls: any = JSON.parse(JSON.stringify(nts1Mk2DefaultPluginNames));
             const index = this.index;
 
             if (!input || !output) {
@@ -100,6 +104,8 @@ class Nts1PluginFetcher {
             }
 
             const get = (e: any) => {
+                console.log("DEBUG: Sysex received", e.data);
+
                 if (e.data.length === 53) {
                     const decoded = this.decode(e.data);
                     const controlIndex = index[type - 1];

@@ -1,24 +1,24 @@
 const devices = [
     {
         "name": "NTS-1",
-        "in": "NTS-1 digital kit",
-        "out": "NTS-1 digital kit"
-    },
-    // other input output names I have observed
-    {
-        "name": "NTS-1",
-        "in": "NTS-1 digital kit KBD/KNOB",
-        "out": "NTS-1 digital kit SOUND"
+        "inOut": [
+            ["NTS-1 digital kit", "NTS-1 digital kit"],
+            ["NTS-1 digital kit KBD/KNOB", "NTS-1 digital kit SOUND"]
+        ]
     },
     {
         "name": "NTS-1 MK2",
-        "in": "TODO",
-        "out": "TODO"
+        "inOut": [
+            ["NTS-1 digital kit mkII NTS-1 digital kit _ KBD/KNOB", "NTS-1 digital kit mkII NTS-1 digital kit _ SOUND"],
+            // I have seen the following listed but it didn't work
+            ["NTS-1 digital kit mkII NTS-1 digital kit _ MIDI IN", "NTS-1 digital kit mkII NTS-1 digital kit _ MIDI OUT"]
+        ]
     },
     {
         "name": "MicroFreak",
-        "in": "Arturia MicroFreak",
-        "out": "Arturia MicroFreak"
+        "inOut": [
+            ["Arturia MicroFreak", "Arturia MicroFreak"]
+        ]
     }
 ];
 const synthCategoryCc = {
@@ -69,8 +69,54 @@ const synthCategoryCc = {
             "Length": 119,
         }
     },
+    // TODO: look at midi implementation to see if more is supported
     "NTS-1 MK2": {
-    // TODO
+        "Oscillator": {
+            "Type": 53,
+            "Shape": 54,
+            "Alt": 55,
+        },
+        "Filter": {
+            "Type": 42,
+            "Cutoff": 43,
+            "Resonance": 44,
+        },
+        "Envelope": {
+            "Type": 14,
+            "Attack": 16,
+            "Release": 19
+        },
+        "LFO": {
+            "Osc LFO Rate": 24,
+            "Osc LFO Depth": 26,
+            "Filter Sweep Rate": 46,
+            "Filter Sweep Depth": 45,
+            // opposite of NTS-1
+            "EG Tremolo Rate": 21,
+            "EG Tremolo Depth": 20,
+        },
+        "Mod": {
+            "Type": 88,
+            "Time": 28,
+            "Depth": 29
+        },
+        "Delay": {
+            "Type": 89,
+            "Time": 30,
+            "Depth": 31,
+            "Mix": 33,
+        },
+        "Reverb": {
+            "Type": 90,
+            "Time": 34,
+            "Depth": 35,
+            "Mix": 36,
+        },
+        "Arp": {
+            "Pattern": 117,
+            "Intervals": 118,
+            "Length": 119,
+        }
     },
     "MicroFreak": {
         "Oscillator": {
@@ -127,6 +173,24 @@ const differentDefaults = {
             "Mix": 64,
         }
     },
+    "NTS-1 MK2": {
+        "Oscillator": {
+            "Type": 8
+        },
+        "Filter": {
+            "Cutoff": 127
+        },
+        "LFO": {
+            "Osc LFO Depth": 64,
+            "Filter Sweep Depth": 64,
+        },
+        "Delay": {
+            "Mix": 64,
+        },
+        "Reverb": {
+            "Mix": 64,
+        }
+    },
     "MicroFreak": {
         "Filter": {
             "Cutoff": 99
@@ -138,32 +202,24 @@ const differentDefaults = {
     }
 };
 const categoryNotRandom = ["Misc"];
-const defaultPluginNames = {
+// TODO: fully update this list
+const nts1Mk2DefaultPluginNames = {
     53: [
+        "Off",
         "Sawtooth",
         "Triangle",
         "Square",
-        "VPN"
+        "VPN",
+        "Noise"
     ],
-    117: [
-        "Up",
-        "Down",
-        "Up-Down",
-        "Down-Up",
-        "Converge",
-        "Diverge",
-        "Conv.-Div.",
-        "Div.-Conv.",
-        "Random",
-        "Stchastic"
-    ],
-    118: [
-        "Octave",
-        "Maj Triad",
-        "Maj Suspended",
-        "Maj Augumented",
-        "Min Triad",
-        "Min Diminished"
+    42: [
+        "LowPass 2p",
+        "LowPass 4p",
+        "BandPass 2p",
+        "BandPass 4p",
+        "HighPass 2p",
+        "HighPass 4p",
+        "Through"
     ],
     14: [
         "ADSR",
@@ -195,6 +251,104 @@ const defaultPluginNames = {
         "Riser",
         "Submarine"
     ],
+    117: [
+        "Up",
+        "Down",
+        "Up-Down",
+        "Down-Up",
+        "Converge",
+        "Diverge",
+        "Conv.-Div.",
+        "Div.-Conv.",
+        "Random",
+        "Stochastic"
+    ],
+    118: [
+        "Octave",
+        "Maj Triad",
+        "Maj Suspended",
+        "Maj Augumented",
+        "Min Triad",
+        "Min Diminished"
+    ]
+};
+// TODO: adopt this to work with NTS-1 MK2 using midi implementation docs
+// based on https://github.com/oscarrc/nts-web/blob/master/src/hooks/useNTS.jsx
+class Nts1Mk2PluginFetcher {
+    constructor() {
+        this.sysex = {
+            vendor: 66,
+            channel: 0,
+            device: 80,
+        };
+        this.defaultControls = {};
+        this.index = [88, 89, 90, 53];
+    }
+    decode(data) {
+        let nameBytes = data.slice(30, data.length - 1);
+        let decodedString = "";
+        nameBytes.forEach(byte => {
+            if (byte) {
+                decodedString = decodedString + String.fromCharCode(byte);
+            }
+        });
+        return decodedString.replace(/[^a-zA-Z0-9 -]/g, "");
+    }
+    async fetchPluginNames(input, output) {
+        return new Promise(resolve => {
+            let type = 1;
+            let bank = 0;
+            let controls = JSON.parse(JSON.stringify(nts1Mk2DefaultPluginNames));
+            const index = this.index;
+            if (!input || !output) {
+                console.error("MIDI devices not available.");
+                return this.defaultControls;
+            }
+            const get = (e) => {
+                console.log("DEBUG: Sysex received", e.data);
+                if (e.data.length === 53) {
+                    const decoded = this.decode(e.data);
+                    const controlIndex = index[type - 1];
+                    if (!controls[controlIndex]) {
+                        controls[controlIndex] = [];
+                    }
+                    if (controls[controlIndex].includes(decoded)) {
+                        console.log("Duplicate plugin uploaded by user", decoded);
+                    }
+                    controls[controlIndex].push(decoded);
+                }
+                // request next plugin name, at the next bank within the same type or in the next type
+                if (bank < 16) {
+                    bank++;
+                    output.sendSysex(this.sysex.vendor, [48 + this.sysex.channel, 0, 1, this.sysex.device, 25, type, bank]);
+                }
+                else if (type < 4) {
+                    bank = 0;
+                    type++;
+                    output.sendSysex(this.sysex.vendor, [48 + this.sysex.channel, 0, 1, this.sysex.device, 25, type, bank]);
+                }
+                else {
+                    input.removeListener("sysex", get);
+                    console.log("Labels fetched:", controls);
+                    resolve(controls);
+                }
+            };
+            // make sure we can receive the sysex messages that contain the plugin names
+            input.addListener("sysex", get);
+            // get the NTS-1 to send us sysex messages
+            // either sysex messages seems to do the trick, it's not needed to send both
+            output.sendSysex(this.sysex.vendor, [80, 0, 2]);
+            output.sendSysex(this.sysex.vendor, [48 + this.sysex.channel, 0, 1, this.sysex.device, 25, type, bank]);
+        });
+    }
+}
+const nts1DefaultPluginNames = {
+    53: [
+        "Sawtooth",
+        "Triangle",
+        "Square",
+        "VPN"
+    ],
     42: [
         "LowPass 2p",
         "LowPass 4p",
@@ -203,6 +357,56 @@ const defaultPluginNames = {
         "HighPass 2p",
         "HighPass 4p",
         "Off"
+    ],
+    14: [
+        "ADSR",
+        "AHR",
+        "AR",
+        "AR Loop",
+        "Open"
+    ],
+    88: [
+        "Off",
+        "Chorus",
+        "Ensemble",
+        "Phaser",
+        "Flanger"
+    ],
+    89: [
+        "Off",
+        "Stereo",
+        "Mono",
+        "Ping Pong",
+        "High Pass",
+        "Tape"
+    ],
+    90: [
+        "Off",
+        "Hall",
+        "Plate",
+        "Space",
+        "Riser",
+        "Submarine"
+    ],
+    117: [
+        "Up",
+        "Down",
+        "Up-Down",
+        "Down-Up",
+        "Converge",
+        "Diverge",
+        "Conv.-Div.",
+        "Div.-Conv.",
+        "Random",
+        "Stochastic"
+    ],
+    118: [
+        "Octave",
+        "Maj Triad",
+        "Maj Suspended",
+        "Maj Augumented",
+        "Min Triad",
+        "Min Diminished"
     ]
 };
 // based on https://github.com/oscarrc/nts-web/blob/master/src/hooks/useNTS.jsx
@@ -230,7 +434,7 @@ class Nts1PluginFetcher {
         return new Promise(resolve => {
             let type = 1;
             let bank = 0;
-            let controls = JSON.parse(JSON.stringify(defaultPluginNames));
+            let controls = JSON.parse(JSON.stringify(nts1DefaultPluginNames));
             const index = this.index;
             if (!input || !output) {
                 console.error("MIDI devices not available.");
@@ -285,49 +489,78 @@ let rangeTranslator = null;
 WebMidi
     .enable({ sysex: true })
     .then(onEnabled)
-    .catch((err) => alert(err.stack ? err.stack : err.message));
+    .catch((err) => {
+    console.log(err.stack ? err.stack : err.message);
+    alert(err.stack ? err.stack : err.message);
+});
 function onEnabled() {
     selectDevices();
-    createUi();
+    if (selectedDevice !== null) {
+        createUi();
+    }
 }
 function selectDevices() {
-    for (let device of devices) {
-        const hasInput = WebMidi.getInputByName(device["in"]) !== undefined;
-        const hasOutput = WebMidi.getOutputByName(device["out"]) !== undefined;
-        if (hasInput && hasOutput) {
-            selectedDevice = device["name"];
-            document.getElementById("title").innerText = selectedDevice;
-            input = WebMidi.getInputByName(device["in"]);
-            input.addListener("controlchange", (e) => {
-                receiveCc(e.dataBytes[0], e.dataBytes[1]);
-            });
-            output = WebMidi.getOutputByName(device["out"]);
-            outputChannel = output.channels[1];
-            if (selectedDevice === "NTS-1") {
-                console.log("[selectDevices] Creating Nts1RangeTranslator");
-                rangeTranslator = new Nts1RangeTranslator();
-                const getRangeLabelsPromise = rangeTranslator.getRangeLabels();
-                getRangeLabelsPromise.then(() => {
-                    console.log("[selectDevices] getRangeLabels finished", rangeTranslator.controls);
+    const inputs = WebMidi.inputs;
+    const outputs = WebMidi.outputs;
+    var chosenInput = -1;
+    var chosenOutput = -1;
+    for (const device of devices) {
+        for (const inOut of device["inOut"]) {
+            for (var i = 0; i < inputs.length; i++) {
+                if (inputs[i].name === inOut[0]) {
+                    chosenInput = i;
+                    break;
+                }
+            }
+            for (var i = 0; i < outputs.length; i++) {
+                if (outputs[i].name === inOut[1]) {
+                    chosenOutput = i;
+                    break;
+                }
+            }
+            if (chosenInput !== -1 && chosenOutput !== -1) {
+                input = inputs[chosenInput];
+                console.log("input", input.name);
+                input.addListener("controlchange", (e) => {
+                    receiveCc(e.dataBytes[0], e.dataBytes[1]);
                 });
+                output = outputs[chosenOutput];
+                console.log("output", output.name);
+                outputChannel = output.channels[1];
+                selectedDevice = device["name"];
+                document.getElementById("title").innerText = selectedDevice;
+                if (selectedDevice === "NTS-1") {
+                    rangeTranslator = new Nts1RangeTranslator();
+                    const getRangeLabelsPromise = rangeTranslator.getRangeLabels();
+                    getRangeLabelsPromise.then(() => {
+                        // TODO: update all existing UI elements with retrieved labels
+                    });
+                }
+                else if (selectedDevice === "NTS-1 MK2") {
+                    rangeTranslator = new Nts1Mk2RangeTranslator();
+                    const getRangeLabelsPromise = rangeTranslator.getRangeLabels();
+                    getRangeLabelsPromise.then(() => {
+                        // TODO: update all existing UI elements with retrieved labels
+                    });
+                }
+                else {
+                    rangeTranslator = new RangeTranslator();
+                }
+                // only select 1 device (for now)
+                return;
             }
-            else {
-                rangeTranslator = new RangeTranslator();
-            }
-            // only select 1 device (for now)
-            break;
         }
     }
     if (selectedDevice === null) {
         let alertString = "No known device found. Please connect one of the following supported devices (input, output):\n";
         devices.forEach((device) => {
-            alertString += `- ${device["name"]} (${device["in"]}, ${device["out"]})\n`;
+            alertString += `- ${device["name"]} (${device["inOut"][0]}, ${device["inOut"][1]})\n`;
         });
-        alertString += "Connected input devices:\n";
+        alertString += "\nConnected input devices:\n";
         WebMidi.inputs.forEach((device, _) => {
             alertString += `- ${device.name}\n`;
         });
-        alertString += "Connected output devices:\n";
+        alertString += "\nConnected output devices:\n";
         WebMidi.outputs.forEach((device, _) => {
             alertString += `- ${device.name}\n`;
         });
@@ -362,7 +595,7 @@ function createUi() {
                 updateUiCcValueLabel(cc, category, ccLabel, parsedValue);
             });
             sliderElements[category][ccLabel] = ccSlider;
-            createElement(ccElement, "span", undefined, ccLabel);
+            createElement(ccElement, "span", undefined, ccLabel + ": ");
             const ccValue = createElement(ccElement, "span", undefined, "0");
             ccValue.style.width = "4ch";
         }
@@ -461,7 +694,6 @@ function updateUiCc(command, category, label, value) {
 function updateUiCcValueLabel(command, category, label, value) {
     const ccLabelElement = sliderElements[category][label].nextSibling.nextSibling;
     ccLabelElement.innerText = rangeTranslator.translate(command, value);
-    console.log(rangeTranslator.translate(command, value));
 }
 function playNoteSample(octaves = true, hold = true) {
     const shortDuration = 100;
@@ -491,6 +723,38 @@ class Nts1RangeTranslator extends RangeTranslator {
         this.controls = await nts1Fetcher.fetchPluginNames(input, output);
     }
     translate(cc, value) {
+        if (this.controls[cc]) {
+            const labels = this.controls[cc];
+            // last label gets max value
+            if (value == 127) {
+                return labels[labels.length - 1];
+            }
+            // TODO: adapt logic to full range of values, coming from slider
+            // Or let slider not use the full range but only specific values
+            // other labels get an even offset
+            const offsetPerLabel = Math.floor(128 / labels.length);
+            if (value % offsetPerLabel !== 0) {
+                console.error(`value ${value} does not match ${labels.length} labels (${labels}) evenly, expecting a multiple of ${offsetPerLabel}`);
+            }
+            const index = Math.floor(value / offsetPerLabel);
+            return labels[index];
+        }
+        else {
+            return value.toString();
+        }
+    }
+}
+class Nts1Mk2RangeTranslator extends RangeTranslator {
+    constructor() {
+        super(...arguments);
+        this.controls = {};
+    }
+    async getRangeLabels() {
+        const nts1Fetcher = new Nts1Mk2PluginFetcher();
+        this.controls = await nts1Fetcher.fetchPluginNames(input, output);
+    }
+    translate(cc, value) {
+        console.log("translating", cc, value);
         if (this.controls[cc]) {
             const labels = this.controls[cc];
             // last label gets max value

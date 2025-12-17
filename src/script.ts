@@ -14,62 +14,92 @@ let rangeTranslator: any = null;
 WebMidi
     .enable({ sysex: true })
     .then(onEnabled)
-    .catch((err: Error) => alert(err.stack ? err.stack : err.message));
+    .catch((err: Error) => {
+        console.log(err.stack ? err.stack : err.message);
+        alert(err.stack ? err.stack : err.message);
+    });
 
 function onEnabled() {
     selectDevices();
-    createUi();
+    if (selectedDevice !== null) {
+        createUi();
+    }
 }
 
+
 function selectDevices() {
-    for (let device of devices) {
-        const hasInput = WebMidi.getInputByName(device["in"]) !== undefined;
-        const hasOutput = WebMidi.getOutputByName(device["out"]) !== undefined;
-        if (hasInput && hasOutput) {
-            selectedDevice = device["name"];
-            document.getElementById("title")!.innerText = selectedDevice;
+    const inputs = WebMidi.inputs;
+    const outputs = WebMidi.outputs;
 
-            input = WebMidi.getInputByName(device["in"]);
-            input.addListener("controlchange", (e: any) => {
-                receiveCc(e.dataBytes[0], e.dataBytes[1]);
-            });
+    var chosenInput = -1;
+    var chosenOutput = -1;
 
-            output = WebMidi.getOutputByName(device["out"]);
-            outputChannel = output.channels[1];
-
-            if (selectedDevice === "NTS-1") {
-                console.log("[selectDevices] Creating Nts1RangeTranslator");
-                rangeTranslator = new Nts1RangeTranslator();
-                const getRangeLabelsPromise = rangeTranslator.getRangeLabels();
-                getRangeLabelsPromise.then(() => {
-                    console.log("[selectDevices] getRangeLabels finished", rangeTranslator.controls);
-                });
-            } else {
-                rangeTranslator = new RangeTranslator();
+    for (const device of devices) {
+        for (const inOut of device["inOut"]) {
+            for (var i = 0; i < inputs.length; i++) {
+                if (inputs[i].name === inOut[0]) {
+                    chosenInput = i;
+                    break;
+                }
             }
-            // only select 1 device (for now)
-            break;
+            for (var i = 0; i < outputs.length; i++) {
+                if (outputs[i].name === inOut[1]) {
+                    chosenOutput = i;
+                    break;
+                }
+            }
+
+            if (chosenInput !== -1 && chosenOutput !== -1) {
+                input = inputs[chosenInput];
+                console.log("input", input.name)
+                input.addListener("controlchange", (e: any) => {
+                    receiveCc(e.dataBytes[0], e.dataBytes[1]);
+                });
+
+                output = outputs[chosenOutput];
+                console.log("output", output.name)
+                outputChannel = output.channels[1];
+
+                selectedDevice = device["name"];
+                document.getElementById("title")!.innerText = selectedDevice;
+
+                if (selectedDevice === "NTS-1") {
+                    rangeTranslator = new Nts1RangeTranslator();
+                    const getRangeLabelsPromise = rangeTranslator.getRangeLabels();
+                    getRangeLabelsPromise.then(() => {
+                        // TODO: update all existing UI elements with retrieved labels
+                    });
+                } else if (selectedDevice === "NTS-1 MK2") {
+                    rangeTranslator = new Nts1Mk2RangeTranslator();
+                    const getRangeLabelsPromise = rangeTranslator.getRangeLabels();
+                    getRangeLabelsPromise.then(() => {
+                        // TODO: update all existing UI elements with retrieved labels
+                    });
+                } else {
+                    rangeTranslator = new RangeTranslator();
+                }
+                // only select 1 device (for now)
+                return
+            }
         }
     }
 
     if (selectedDevice === null) {
         let alertString = "No known device found. Please connect one of the following supported devices (input, output):\n";
         devices.forEach((device) => {
-            alertString += `- ${device["name"]} (${device["in"]}, ${device["out"]})\n`;
+            alertString += `- ${device["name"]} (${device["inOut"][0]}, ${device["inOut"][1]})\n`;
         });
-        alertString += "Connected input devices:\n";
+        alertString += "\nConnected input devices:\n";
         WebMidi.inputs.forEach((device: any, _) => {
             alertString += `- ${device.name}\n`;
         });
-        alertString += "Connected output devices:\n";
+        alertString += "\nConnected output devices:\n";
         WebMidi.outputs.forEach((device: any, _) => {
             alertString += `- ${device.name}\n`;
         });
         alert(alertString);
         return;
     }
-
-
 }
 
 function createUi() {
@@ -110,7 +140,7 @@ function createUi() {
 
             sliderElements[category][ccLabel] = ccSlider;
 
-            createElement(ccElement, "span", undefined, ccLabel);
+            createElement(ccElement, "span", undefined, ccLabel + ": ");
 
             const ccValue = createElement(ccElement, "span", undefined, "0");
             ccValue.style.width = "4ch";
@@ -221,7 +251,6 @@ function updateUiCc(command: number, category: string, label: string, value: num
 function updateUiCcValueLabel(command: number, category: string, label: string, value: number) {
     const ccLabelElement = sliderElements[category][label].nextSibling.nextSibling as HTMLSpanElement;
     ccLabelElement.innerText = rangeTranslator.translate(command, value);
-    console.log(rangeTranslator.translate(command, value));
 }
 
 function playNoteSample(octaves = true, hold = true) {
@@ -253,6 +282,42 @@ class Nts1RangeTranslator extends RangeTranslator {
     }
 
     translate(cc: number, value: number): string {
+        if (this.controls[cc]) {
+            const labels = this.controls[cc];
+
+            // last label gets max value
+            if (value == 127) {
+                return labels[labels.length - 1];
+            }
+
+            // TODO: adapt logic to full range of values, coming from slider
+            // Or let slider not use the full range but only specific values
+
+            // other labels get an even offset
+            const offsetPerLabel = Math.floor(128 / labels.length);
+            if (value % offsetPerLabel !== 0) {
+                console.error(`value ${value} does not match ${labels.length} labels (${labels}) evenly, expecting a multiple of ${offsetPerLabel}`);
+            }
+            const index = Math.floor(value / offsetPerLabel);
+
+            return labels[index];
+        } else {
+            return value.toString();
+        }
+    }
+}
+
+
+class Nts1Mk2RangeTranslator extends RangeTranslator {
+    controls = {};
+
+    async getRangeLabels(): Promise<void> {
+        const nts1Fetcher = new Nts1Mk2PluginFetcher();
+        this.controls = await nts1Fetcher.fetchPluginNames(input, output);
+    }
+
+    translate(cc: number, value: number): string {
+        console.log("translating", cc, value);
         if (this.controls[cc]) {
             const labels = this.controls[cc];
 
