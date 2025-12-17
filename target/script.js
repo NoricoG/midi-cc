@@ -499,7 +499,6 @@ function onEnabled() {
     if (selectedDevice !== null) {
         createUi();
     }
-    showMidiDebugInfo();
 }
 function selectDevices() {
     const inputs = WebMidi.inputs;
@@ -548,6 +547,27 @@ function selectDevices() {
                 else {
                     rangeTranslator = new RangeTranslator();
                 }
+                // populate input/output selectors in case user wants to switch
+                const inputSelector = document.getElementById("midi-in");
+                const outputSelector = document.getElementById("midi-out");
+                for (var i = 0; i < inputs.length; i++) {
+                    const option = document.createElement("option");
+                    option.value = inputs[i].id;
+                    option.text = `${inputs[i].name} (id: ${inputs[i].id})`;
+                    if (i === chosenInput) {
+                        option.selected = true;
+                    }
+                    inputSelector.appendChild(option);
+                }
+                for (var i = 0; i < outputs.length; i++) {
+                    const option = document.createElement("option");
+                    option.value = outputs[i].id;
+                    option.text = `${outputs[i].name} (id: ${outputs[i].id})`;
+                    if (i === chosenOutput) {
+                        option.selected = true;
+                    }
+                    outputSelector.appendChild(option);
+                }
                 // only select 1 device (for now)
                 return;
             }
@@ -561,6 +581,18 @@ function selectDevices() {
         alert(alertString);
         return;
     }
+}
+function changeMidiInOut() {
+    const inputSelector = document.getElementById("midi-in");
+    const outputSelector = document.getElementById("midi-out");
+    const newInputId = inputSelector.value;
+    const newOutputId = outputSelector.value;
+    input = WebMidi.getInputById(newInputId);
+    output = WebMidi.getOutputById(newOutputId);
+    input.addListener("controlchange", (e) => {
+        receiveCc(e.dataBytes[0], e.dataBytes[1]);
+    });
+    outputChannel = output.channels[1];
 }
 function createUi() {
     const categoriesElement = document.getElementById("categories");
@@ -625,22 +657,6 @@ function createSlider(parentElement, min, max, value, onChange) {
     };
     parentElement.appendChild(slider);
     return slider;
-}
-function showMidiDebugInfo() {
-    const inputs = WebMidi.inputs;
-    const outputs = WebMidi.outputs;
-    const midiDebugElement = document.getElementById("midi-debug");
-    for (var i = 0; i < inputs.length; i++) {
-        var label = `MIDI Input ${i}: ${inputs[i].name} (id: ${inputs[i].id})`;
-        if ("sysex" in inputs[i].eventMap) {
-            label += " with sysex eventMap";
-        }
-        const inputElement = createElement(midiDebugElement, "p", "midi-in", label);
-    }
-    for (var i = 0; i < outputs.length; i++) {
-        var label = `MIDI Output ${i}: ${outputs[i].name} (id: ${outputs[i].id})`;
-        const outputElement = createElement(midiDebugElement, "p", "midi-out", label);
-    }
 }
 function sendCc(cc, value) {
     outputChannel.sendControlChange(cc, value);
