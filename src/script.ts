@@ -24,6 +24,7 @@ function onEnabled() {
     if (selectedDevice !== null) {
         createUi();
     }
+    showMidiDebugInfo();
 }
 
 
@@ -85,17 +86,9 @@ function selectDevices() {
     }
 
     if (selectedDevice === null) {
-        let alertString = "No known device found. Please connect one of the following supported devices (input, output):\n";
+        let alertString = "No known device found. Please connect one of the following supported devices:\n";
         devices.forEach((device) => {
-            alertString += `- ${device["name"]} (${device["inOut"][0]}, ${device["inOut"][1]})\n`;
-        });
-        alertString += "\nConnected input devices:\n";
-        WebMidi.inputs.forEach((device: any, _) => {
-            alertString += `- ${device.name}\n`;
-        });
-        alertString += "\nConnected output devices:\n";
-        WebMidi.outputs.forEach((device: any, _) => {
-            alertString += `- ${device.name}\n`;
+            alertString += `- ${device["name"]}\n`;
         });
         alert(alertString);
         return;
@@ -179,6 +172,27 @@ function createSlider(parentElement: HTMLElement, min: number, max: number, valu
     };
     parentElement.appendChild(slider)
     return slider;
+}
+
+function showMidiDebugInfo() {
+    const inputs = WebMidi.inputs;
+    const outputs = WebMidi.outputs;
+
+    const midiDebugElement = document.getElementById("midi-debug");
+
+    for (var i = 0; i < inputs.length; i++) {
+        var label = `MIDI Input ${i}: ${inputs[i].name} (id: ${inputs[i].id})`;
+        if ("sysex" in inputs[i].eventMap) {
+            label += " with sysex eventMap";
+        }
+        const inputElement = createElement(midiDebugElement!, "p", "midi-in", label);
+    }
+
+    for (var i = 0; i < outputs.length; i++) {
+        var label = `MIDI Output ${i}: ${outputs[i].name} (id: ${outputs[i].id})`;
+        const outputElement = createElement(midiDebugElement!, "p", "midi-out", label);
+    }
+
 }
 
 function sendCc(cc: number, value: number) {
