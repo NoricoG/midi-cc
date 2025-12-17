@@ -9,6 +9,7 @@ const devices = [
     {
         "name": "NTS-1 MK2",
         "inOut": [
+            ["NTS-1 digital kit mkII", "NTS-1 digital kit mkII"],
             ["NTS-1 digital kit mkII NTS-1 digital kit _ KBD/KNOB", "NTS-1 digital kit mkII NTS-1 digital kit _ SOUND"],
             // I have seen the following listed but it didn't work
             ["NTS-1 digital kit mkII NTS-1 digital kit _ MIDI IN", "NTS-1 digital kit mkII NTS-1 digital kit _ MIDI OUT"]
