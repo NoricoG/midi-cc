@@ -26,14 +26,30 @@ function onEnabled() {
     }
 }
 
-
 function selectDevices() {
     const inputs = WebMidi.inputs;
     const outputs = WebMidi.outputs;
 
+    const inputSelector = document.getElementById("midi-in") as HTMLSelectElement;
+    for (var i = 0; i < inputs.length; i++) {
+        const option = document.createElement("option");
+        option.value = inputs[i].id;
+        option.text = `${inputs[i].name} (id: ${inputs[i].id})`;
+        inputSelector.appendChild(option);
+    }
+
+    const outputSelector = document.getElementById("midi-out") as HTMLSelectElement;
+    for (var i = 0; i < outputs.length; i++) {
+        const option = document.createElement("option");
+        option.value = outputs[i].id;
+        option.text = `${outputs[i].name} (id: ${outputs[i].id})`;
+        outputSelector.appendChild(option);
+    }
+
     var chosenInput = -1;
     var chosenOutput = -1;
 
+    // look for both input and output of one of the expected devices
     for (const device of devices) {
         for (const inOut of device["inOut"]) {
             for (var i = 0; i < inputs.length; i++) {
@@ -51,13 +67,11 @@ function selectDevices() {
 
             if (chosenInput !== -1 && chosenOutput !== -1) {
                 input = inputs[chosenInput];
-                console.log("input", input.name)
                 input.addListener("controlchange", (e: any) => {
                     receiveCc(e.dataBytes[0], e.dataBytes[1]);
                 });
 
                 output = outputs[chosenOutput];
-                console.log("output", output.name)
                 outputChannel = output.channels[1];
 
                 selectedDevice = device["name"];
@@ -79,27 +93,11 @@ function selectDevices() {
                     rangeTranslator = new RangeTranslator();
                 }
 
-                // populate input/output selectors in case user wants to switch
-                const inputSelector = document.getElementById("midi-in") as HTMLSelectElement;
-                const outputSelector = document.getElementById("midi-out") as HTMLSelectElement;
-                for (var i = 0; i < inputs.length; i++) {
-                    const option = document.createElement("option");
-                    option.value = inputs[i].id;
-                    option.text = `${inputs[i].name} (id: ${inputs[i].id})`;
-                    if (i === chosenInput) {
-                        option.selected = true;
-                    }
-                    inputSelector.appendChild(option);
-                }
-                for (var i = 0; i < outputs.length; i++) {
-                    const option = document.createElement("option");
-                    option.value = outputs[i].id;
-                    option.text = `${outputs[i].name} (id: ${outputs[i].id})`;
-                    if (i === chosenOutput) {
-                        option.selected = true;
-                    }
-                    outputSelector.appendChild(option);
-                }
+                // update midi in out selectors
+                inputSelector.value = input.id;
+                updateSelectedOptionLabel(inputSelector, input.id);
+                outputSelector.value = output.id;
+                updateSelectedOptionLabel(outputSelector, output.id);
 
                 // only select 1 device (for now)
                 return
@@ -108,12 +106,28 @@ function selectDevices() {
     }
 
     if (selectedDevice === null) {
+        // changing midi in/out is only supported when a device has been found
+        document.getElementById("changeMidiInOut").style.display = "none";
+
         let alertString = "No known device found. Please connect one of the following supported devices:\n";
         devices.forEach((device) => {
             alertString += `- ${device["name"]}\n`;
         });
         alert(alertString);
         return;
+    }
+}
+
+function updateSelectedOptionLabel(selectElement: HTMLSelectElement, selectedId: string) {
+    for (var i = 0; i < selectElement.children.length; i++) {
+        const option = selectElement.children[i] as HTMLOptionElement;
+        if (option.value == selectedId) {
+            if (!option.innerHTML.includes(" - selected")) {
+                option.innerHTML += " - selected";
+            }
+        } else if (option.innerHTML.includes(" - selected")) {
+            option.innerHTML = option.innerHTML.replace(" - selected", "");
+        }
     }
 }
 
@@ -132,6 +146,9 @@ function changeMidiInOut() {
     });
 
     outputChannel = output.channels[1];
+
+    updateSelectedOptionLabel(inputSelector, newInputId);
+    updateSelectedOptionLabel(outputSelector, newOutputId);
 }
 
 function createUi() {
@@ -169,17 +186,18 @@ function createUi() {
                 sendCc(cc, parsedValue);
                 updateUiCcValueLabel(cc, category, ccLabel, parsedValue);
             });
-
             sliderElements[category][ccLabel] = ccSlider;
 
             createElement(ccElement, "span", undefined, ccLabel + ": ");
 
             const ccValue = createElement(ccElement, "span", undefined, "0");
             ccValue.style.width = "4ch";
+
+            updateUiCcValueLabel(cc, category, ccLabel, initialValue);
         }
     }
 
-    playNoteSample(false, true);
+    playNoteSample();
 }
 
 function createElement(parentElement: HTMLElement, tag: string, className?: string, textContent?: string): HTMLElement {
@@ -285,18 +303,18 @@ function updateUiCcValueLabel(command: number, category: string, label: string, 
     ccLabelElement.innerText = rangeTranslator.translate(command, value);
 }
 
-function playNoteSample(octaves = true, hold = true) {
-    const shortDuration = 100;
-    const longDuration = 500;
-    const nOctaves = 6
-    if (octaves) {
-        for (let i = 0; i < 6; i++) {
-            outputChannel.playNote(`C${i + 1}`, { duration: shortDuration, time: `+${i * shortDuration}` });
-        }
+function playNoteSample() {
+    const noteDuration = 200;
+    const waitDuration = 200;
+    const nOctaves = 2;
+    const octaveInterval = 3;
+
+    for (let i = 0; i < nOctaves; i++) {
+        const note = `C${(i * octaveInterval) + 1}`
+        const time = `+${i * (noteDuration + waitDuration)}`;
+        outputChannel.playNote(note, { duration: noteDuration, time: time });
     }
-    if (hold) {
-        outputChannel.playNote("C4", { duration: longDuration, time: `+${nOctaves * shortDuration}` });
-    }
+
 }
 
 class RangeTranslator {
@@ -306,16 +324,16 @@ class RangeTranslator {
 }
 
 class Nts1RangeTranslator extends RangeTranslator {
-    controls = {};
+    labeled = {};
 
     async getRangeLabels(): Promise<void> {
         const nts1Fetcher = new Nts1PluginFetcher();
-        this.controls = await nts1Fetcher.fetchPluginNames(input, output);
+        this.labeled = await nts1Fetcher.fetchPluginNames(input, output);
     }
 
     translate(cc: number, value: number): string {
-        if (this.controls[cc]) {
-            const labels = this.controls[cc];
+        if (this.labeled[cc]) {
+            const labels = this.labeled[cc];
 
             // last label gets max value
             if (value == 127) {
@@ -339,19 +357,81 @@ class Nts1RangeTranslator extends RangeTranslator {
     }
 }
 
+function mapFrequency(value: number, minFreq: number, maxFreq: number): string {
+    const scaled = minFreq + value / 127 * (maxFreq - minFreq);
+    const rounded = Math.round(scaled * 10) / 10;
+    return `${rounded} Hz`;
+}
+
+function mapUnipolar(value: number, minOutput: number, maxOutput: number, label: string): string {
+    const scaled = minOutput + value / 127 * (maxOutput - minOutput);
+    const rounded = Math.round(scaled);
+    return ` ${label} ${rounded}`;
+}
+
+function mapBipolar(value: number, maxOutput: number, negativeLabel: string, positiveLabel: string): string {
+    const shifted = value - 64;
+    const scaled = Math.abs(shifted) / 64 * maxOutput;
+    const rounded = Math.round(scaled);
+    if (shifted > 0) {
+        return ` ${positiveLabel} ${rounded}`;
+    } else if (shifted < 0) {
+        return ` ${negativeLabel} ${rounded}`;
+    } else {
+        return "0";
+    }
+}
 
 class Nts1Mk2RangeTranslator extends RangeTranslator {
-    controls = {};
+    labeled = {};
+    mapped = {
+        // OSC LFO Rate
+        24: function (value: number): string {
+            return mapFrequency(value, 0, 30);
+        },
+        // Osc LFO Depth
+        26: function (value: number): string {
+            return mapBipolar(value, 100, "Pitch", "Shape");
+        },
+        // Filter Sweep Rate
+        46: function (value: number): string {
+            return mapFrequency(value, 0, 30);
+        },
+        // Filter Sweep Depth
+        45: function (value: number): string {
+            return mapBipolar(value, 100, "Up", "Down");
+        },
+        // EG Tremolo Rate
+        21: function (value: number): string {
+            return mapFrequency(value, 0, 60);
+        },
+        // EG Tremolo Depth
+        20: function (value: number): string {
+            return mapUnipolar(value, 0, 100, "Depth");
+        },
+        // Delay Mix
+        33: function (value: number): string {
+            return mapBipolar(value, 100, "Dry", "Wet");
+        },
+        // Reverb Mix
+        36: function (value: number): string {
+            return mapBipolar(value, 100, "Dry", "Wet");
+        },
+        // Arp Length
+        119: function (value: number): string {
+            return mapUnipolar(value, 1, 24, "Steps");
+        }
+    }
 
     async getRangeLabels(): Promise<void> {
         const nts1Fetcher = new Nts1Mk2PluginFetcher();
-        this.controls = await nts1Fetcher.fetchPluginNames(input, output);
+        this.labeled = await nts1Fetcher.fetchPluginNames(input, output);
     }
 
     translate(cc: number, value: number): string {
         console.log("translating", cc, value);
-        if (this.controls[cc]) {
-            const labels = this.controls[cc];
+        if (this.labeled[cc]) {
+            const labels = this.labeled[cc];
 
             // last label gets max value
             if (value == 127) {
@@ -369,6 +449,8 @@ class Nts1Mk2RangeTranslator extends RangeTranslator {
             const index = Math.floor(value / offsetPerLabel);
 
             return labels[index];
+        } else if (this.mapped[cc]) {
+            return `${value} ≈ ${this.mapped[cc](value)}`;
         } else {
             return value.toString();
         }
